@@ -1,0 +1,6 @@
+README.md
+setup.py
+FlexUssd.egg-info/PKG-INFO
+FlexUssd.egg-info/SOURCES.txt
+FlexUssd.egg-info/dependency_links.txt
+FlexUssd.egg-info/top_level.txt
