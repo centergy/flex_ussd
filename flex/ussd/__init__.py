@@ -12,4 +12,4 @@
 
 msg = 'This is a message...'
 
-print('This is the new USSD framework')
+print(msg)
