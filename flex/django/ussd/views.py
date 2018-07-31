@@ -5,7 +5,7 @@ from django.views.generic import View
 from django.core.cache import cache
 
 
-from .config import ussd_config
+from .settings import ussd_settings
 from .screens import get_screen, ScreenState, UssdScreenType, CON, END, ScreenRef
 from .utils import AttributeBag
 from .utils.decorators import cached_property
@@ -24,7 +24,7 @@ class UssdView(View):
 		return io.StringIO()
 
 	def get_initial_screen(self):
-		return ussd_config.INITIAL_SCREEN
+		return ussd_settings.INITIAL_SCREEN
 
 	def create_new_state(self, screen):
 		screen = get_screen(screen)

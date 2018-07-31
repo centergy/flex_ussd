@@ -8,7 +8,7 @@ from .. datastructures import Void
 from ..utils.text import to_snakecase, to_startcase
 from ..utils.decorators import cached_class_property, cached_property, export
 from ..namespaces import module_ussd_namespace
-from ..settings import ussd_settings
+from ..config import ussd_config
 
 from collections import namedtuple
 
@@ -193,7 +193,7 @@ class ScreenMetaOptions(BaseScreenMetaOptions):
 		return value
 
 	def _get_namespace(self):
-		return (ussd_settings.NAMESPACE_LOADER or module_ussd_namespace)(self.module)
+		return (ussd_config.NAMESPACE_LOADER or module_ussd_namespace)(self.module)
 
 	def _make_screen_slug(self):
 		return  '.%s' % to_snakecase(self.name)

@@ -13,7 +13,7 @@ from logging import getLogger
 
 from ..datastructures import ClassReigistry, AttributeBag, choice, symbol
 from ..utils.decorators import cached_property, class_property
-from ..config import ussd_config
+from ..settings import ussd_settings
 
 from .options import screen_meta_option, ScreenMetaOptions
 
@@ -24,7 +24,7 @@ NOTHING = symbol('NOTHING')
 
 _REGISTRY = ClassReigistry()
 
-_UID_LEN = ussd_config.SCREEN_UID_LEN
+_UID_LEN = ussd_settings.SCREEN_UID_LEN
 
 
 _UID_LOCK = set()
@@ -98,7 +98,7 @@ def get_screen_uid(screen, default=NOTHING):
 
 
 def get_home_screen():
-	return ussd_config.INITIAL_SCREEN
+	return ussd_settings.INITIAL_SCREEN
 
 
 
@@ -352,7 +352,7 @@ class UssdScreen(object, metaclass=UssdScreenType):
 				self.state._action = rv
 				self.state._pages = pages = list(
 						self.payload.paginate(
-								ussd_config.MAX_PAGE_LENGTH-4,
+								ussd_settings.MAX_PAGE_LENGTH-4,
 								pg_menu.next, pg_menu.prev,
 								self.get_nav_menu_list()
 							)

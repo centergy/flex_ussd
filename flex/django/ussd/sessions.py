@@ -4,7 +4,7 @@ import datetime
 from collections import namedtuple, ChainMap
 
 from .datastructures import AttributeBag
-from .config import ussd_config
+from .settings import ussd_settings
 from django.core.cache import cache
 from django.utils import timezone
 from .screens import ScreenRef, get_screen_uid, get_home_screen
@@ -24,7 +24,7 @@ class UssdSessionKey(namedtuple('_UssdSessionKey', 'uid sid')):
 
 	def __str__(self):
 		return '%s:%s/%s' \
-				% (ussd_config.SESSION_KEY_PREFIX, self.uid, self.sid)
+				% (ussd_settings.SESSION_KEY_PREFIX, self.uid, self.sid)
 
 	def asdict(self):
 		return self._asdict()
@@ -126,7 +126,7 @@ class HistoryPath(str):
 
 	@property
 	def head(self):
-		return self[-ussd_config.SCREEN_UID_LEN:]
+		return self[-ussd_settings.SCREEN_UID_LEN:]
 
 
 
@@ -146,7 +146,7 @@ class History(object):
 		return '%s:%s' % (self.key, path)
 
 	def cache_timeout(self):
-		return ussd_config.HISTORY_STATE_X * ussd_config.SESSION_TIMEOUT
+		return ussd_settings.HISTORY_STATE_X * ussd_settings.SESSION_TIMEOUT
 
 	def pop(self, k=None):
 		k = k or 1

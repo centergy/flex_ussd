@@ -1,50 +1,19 @@
-import os
 import re
-import string
-import random
-import pickle
-import warnings
-from django.apps import apps
-from collections import namedtuple
-from django.conf import settings
-from django.core.cache import cache
-from collections import OrderedDict
-from logging import getLogger
+import inspect
+from threading import RLock
+from warnings import warn
 
+from .. import exc
 from .. datastructures import Void
-from ..utils import ClassReigistry, AttributeBag, choice
-from ..utils.decorators import cached_property, class_property
-from ..config import ussd_config
+from ..utils.text import to_snakecase, to_startcase
+from ..utils.decorators import cached_class_property, cached_property, export
+from ..namespaces import module_ussd_namespace
+from ..settings import ussd_settings
 
-from .options import screen_meta_option, ScreenMetaOptions
+from collections import namedtuple
 
-logger = getLogger('ussd')
-
-
-NOTHING = object()
-
-_REGISTRY = ClassReigistry()
-
-
-
-class InputSetType(type):
-
-	def __new__(mcls, name, bases, dct):
-		super_new = super(InputSetType, mcls).__new__
-
-		if not any((b for b in bases if isinstance(b, InputSetType))):
-			return super_new(mcls, name, bases, dct)
-
-		cls = super_new(mcls, name, bases, dct)
-		return cls
-
-
-class InputSet(object, metaclass=InputSet):
-	pass
-
-
-
-class Input(object):
+@export
+class screen_meta_option(object):
 
 	__slots__ = ('__name__', 'option', 'fload', '_inherit', 'default', '__doc__', 'lock')
 
@@ -147,3 +116,87 @@ class Input(object):
 		self.loader(fload)
 		return self
 
+
+
+@export
+class BaseScreenMetaOptions(object):
+
+	def __init__(self, screen, meta, base=None):
+		self.screen = screen
+		self._meta = meta
+		self._base = base
+
+	@cached_class_property
+	def _opts(cls):
+		rv = {}
+		for k in dir(cls):
+			if k != '_opts' and k not in rv and isinstance(getattr(cls, k), screen_meta_option):
+				rv[k] = getattr(cls, k)
+				rv[k].name = k
+		return rv
+
+	def _prepare(self):
+		assert hasattr(self, '_meta'), 'Screen meta options already prepared.'
+
+		for k,opt in self._opts.items():
+			opt.load(self, self._meta)
+
+		del self._meta
+		del self._base
+
+
+
+@export
+class ScreenMetaOptions(BaseScreenMetaOptions):
+
+	is_abstract = screen_meta_option('abstract', default=False, inherit=False)
+
+	@property
+	def name(self):
+		return self.screen.__name__
+
+	@property
+	def module(self):
+		return self.screen.__module__
+
+	@property
+	def import_name(self):
+		return '%s.%s' % (self.module, self.name)
+
+	@screen_meta_option(inherit=False)
+	def label(self, value):
+		return value or self._make_screen_label()
+
+	@screen_meta_option(inherit=False)
+	def description(self, value):
+		return value or self.screen.__doc__
+
+	@screen_meta_option(inherit=False)
+	def slug(self, value):
+		value = value or self._make_screen_slug()
+
+		if not re.search(r'^\.?[a-zA-Z0-9_][-a-zA-Z0-9_.]+\Z', value):
+			raise exc.ScreenIdError(
+				'Invalid UssdScreen id <%s(id="%s")>.'\
+				% (self.import_name, name)
+			)
+
+		if value[0] == '.':
+			namespace = self._get_namespace()
+			if namespace:
+				value = namespace + value
+			else:
+				raise exc.ScreenIdError(
+					'Screen <%s(id="%s")> has a relative id but it isn\'t in a '
+					'registered namespace.' % (self.import_name, name)
+				)
+		return value
+
+	def _get_namespace(self):
+		return (ussd_settings.NAMESPACE_LOADER or module_ussd_namespace)(self.module)
+
+	def _make_screen_slug(self):
+		return  '.%s' % to_snakecase(self.name)
+
+	def _make_screen_label(self):
+		return to_startcase(self.name)

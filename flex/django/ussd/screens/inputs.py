@@ -14,7 +14,7 @@ from logging import getLogger
 from .. datastructures import Void
 from ..utils import ClassReigistry, AttributeBag, choice
 from ..utils.decorators import cached_property, class_property
-from ..config import ussd_config
+from ..settings import ussd_settings
 
 from .options import screen_meta_option, ScreenMetaOptions
 
