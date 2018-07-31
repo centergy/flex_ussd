@@ -8,3 +8,6 @@ default_app_config = 'ussd.apps.UssdConfig'
 def get_screen(name, *args, **kwargs):
 	from .screens import get_screen
 	return get_screen(name, *args, **kwargs)
+
+
+print('This is the new USSD framework')
