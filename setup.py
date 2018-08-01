@@ -13,8 +13,11 @@ setup(
 	description="USSD application framework",
 	long_description=long_description,
 	long_description_content_type="text/markdown",
-	url="https://github.com/pypa/sampleproject",
+	url="https://github.com/centergy/flex_ussd",
 	packages=find_packages(include=['flex.*']),
+	install_requires=[
+		'Werkzeug',
+	],
 	classifiers=(
 		"Programming Language :: Python :: 3",
 		"License :: OSI Approved :: MIT License",

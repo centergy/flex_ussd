@@ -1,9 +1,11 @@
 from .exc import UssdNamespaceError
+from utils.decorators import export
 
 
 _module_namespace_registry = dict()
 
 
+@export
 def ussd_namespace(module_name, name=None):
 	"""Register USSD namespace for given module.
 
@@ -58,7 +60,7 @@ def ussd_namespace(module_name, name=None):
 
 
 
-
+@export
 def module_ussd_namespace(module_name, silent=False):
 	if not module_name or not isinstance(module_name, str):
 		raise ValueError(
