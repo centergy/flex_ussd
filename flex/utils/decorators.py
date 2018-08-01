@@ -1,7 +1,6 @@
-from threading import RLock
-from warnings import warn
-
 import sys
+from threading import RLock
+from functools import update_wrapper
 
 NOTHING = object()
 

@@ -13,7 +13,7 @@ from logging import getLogger
 
 from ..datastructures import ClassReigistry, AttributeBag, choice, symbol
 from ..utils.decorators import cached_property, class_property
-from ..config import ussd_config
+from ..config import config
 
 from .options import screen_meta_option, ScreenMetaOptions
 
@@ -42,7 +42,7 @@ NOTHING = symbol('NOTHING')
 
 _REGISTRY = ClassReigistry()
 
-_UID_LEN = ussd_config.SCREEN_UID_LEN
+_UID_LEN = config.SCREEN_UID_LEN
 
 
 

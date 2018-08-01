@@ -7,7 +7,7 @@ from django.core.cache import cache
 from django.utils.functional import SimpleLazyObject
 
 from .utils import AttributeBag
-from .config import ussd_config
+from .config import config
 from .sessions import UssdSessionKey, UssdSession
 
 _epoch = datetime.datetime(2017, 1, 1).timestamp()
@@ -18,16 +18,16 @@ class CacheBackend(object):
 	session_class = UssdSession
 
 	def get_session_key_class(self, request):
-		return ussd_config.SESSION_KEY_CLASS
+		return config.SESSION_KEY_CLASS
 
 	def get_session_class(self, request):
-		return ussd_config.SESSION_CLASS
+		return config.SESSION_CLASS
 
 	def get_session_timeout(self):
-		return ussd_config.SESSION_TIMEOUT
+		return config.SESSION_TIMEOUT
 
 	# def get_screen_state_timeout(self):
-	# 	return ussd_config.SCREEN_STATE_TIMEOUT
+	# 	return config.SCREEN_STATE_TIMEOUT
 
 	def get_request_sid(self, request):
 		rv = request.GET.get('session_id')
@@ -80,7 +80,7 @@ class CacheBackend(object):
 
 
 def _get_ussd_session_backend():
-	cls = ussd_config.SESSION_BACKEND
+	cls = config.SESSION_BACKEND
 	return cls()
 
 

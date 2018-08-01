@@ -1,7 +1,7 @@
 import re
 
 from .backends import ussd_session_backend
-from .config import ussd_config
+from .config import config
 from .utils import ArgumentVector
 
 
@@ -25,13 +25,13 @@ class UssdMiddleware(object):
 				raise ValueError('Query param %s required in USSD requests.' % k)
 
 	def is_ussd_request(self, request):
-		for url in ussd_config.URLS:
+		for url in config.URLS:
 			if re.search(url['path'], request.path) is not None:
 				self.validate_request(request, url)
 				# print(request.path, 'is a ussd request. Matched:', url['path'])
 				return True
 
-		# print(request.path, 'is not a ussd request. URLs:', ussd_config.URLS)
+		# print(request.path, 'is not a ussd request. URLs:', config.URLS)
 		return False
 
 	def open_session(self, req):

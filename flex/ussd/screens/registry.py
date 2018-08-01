@@ -1,5 +1,5 @@
 from threading import Lock
-from ..config import ussd_config
+from ..config import config
 
 
 class ScreenRegistry(object):
