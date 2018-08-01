@@ -81,15 +81,14 @@ class ConfigManager(Proxy):
 	_value_checks = VALUE_CHECKS
 
 	def __init__(self):
-		pass
+		object.__setattr__(self, '_provider', None)
 
 	def _get_current_object(self):
 		"""Return the current config object from the provider.
 		"""
-		try:
-			return self._provider.get_config()
-		except AttributeError as e:
-			raise RuntimeError('USSD config provider not set.') from e
+		if self._provider is None:
+			raise RuntimeError('USSD config provider not set.')
+		return self._provider.get_config()
 
 	def set_provider(self, provider: ConfigProvider):
 		object.__setattr__(self, '_provider', provider)

@@ -1,5 +1,5 @@
 from .exc import UssdNamespaceError
-from utils.decorators import export
+from .utils.decorators import export
 
 
 _module_namespace_registry = dict()
