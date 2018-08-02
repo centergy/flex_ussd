@@ -15,6 +15,8 @@ from abc import ABCMeta, abstractmethod
 from flex.utils.local import Proxy
 from flex.utils.decorators import export
 from flex.utils.module_loading import import_strings
+from flex.datastructures.collections import AttrChainMap
+
 
 __all__ = [
 	'DEFAULT_CONFIG'
@@ -70,7 +72,7 @@ class ConfigProvider(metaclass=ABCMeta):
 
 
 @export
-class ConfigManager(Proxy):
+class Config(AttrChainMap):
 	"""The ussd config object.
 	"""
 	__slots__ = ('_provider',)
@@ -82,6 +84,9 @@ class ConfigManager(Proxy):
 
 	def __init__(self):
 		object.__setattr__(self, '_provider', None)
+
+	def __del__(self):
+		pass
 
 	def _get_current_object(self):
 		"""Return the current config object from the provider.
@@ -110,7 +115,7 @@ class ConfigManager(Proxy):
 		return config
 
 
-config = ConfigManager()
+config = Config()
 
 
 def _ensure_list(val, str_split=None):
