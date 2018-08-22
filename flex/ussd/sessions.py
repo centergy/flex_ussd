@@ -1,45 +1,36 @@
-import time
-import hashlib
 import datetime
-from collections import namedtuple, ChainMap
 
-from .datastructures import AttributeBag
-from .config import config
-from django.core.cache import cache
-from django.utils import timezone
-from .screens import ScreenRef, get_screen_uid, get_home_screen
+from flex.datastructures.collections import AttrBag
+from flex.utils.decorators import cached_property, export
+from flex.utils.module_loading import import_if_string
 
-
-
-_epoch = datetime.datetime(2017, 1, 1).timestamp()
+from .abc import SessionManagerABC, AppBoundInstanceABC
+from .wrappers import UssdRequest
+from . import signals
 
 
-class UssdSessionKey(namedtuple('_UssdSessionKey', 'uid sid')):
+@export
+class SessionKey(object):
 
-	__slots__ = ()
+	__slots__ = ('phone_number', 'session_id')
 
-	@property
-	def hash(self):
-		return hashlib.sha256(str(self)).hexdigest()
+	def __init__(self, phone_number, session_id=None):
+		self.phone_number = phone_number
+		self.session_id = session_id
 
 	def __str__(self):
-		return '%s:%s/%s' \
-				% (config.SESSION_KEY_PREFIX, self.uid, self.sid)
-
-	def asdict(self):
-		return self._asdict()
+		return '%s/%s' % (self.phone_number, self.session_id)
 
 
-
-class UssdSession(object):
-	restored = None
+@export
+class Session(object):
 
 	def __init__(self, key):
 		self.key = key
 		self.created_at = None
 		self.accessed_at = None
-		self.data = AttributeBag()
-		self.ctx = AttributeBag()
+		self.data = AttrBag()
+		self.ctx = AttrBag()
 		self.argv = None
 		self._is_started = False
 		self._history_stack = None
@@ -52,8 +43,8 @@ class UssdSession(object):
 
 	@property
 	def history(self):
-		if self._history is None:
-			self._history = History(self._history_stack, self.msisdn)
+		# if self._history is None:
+		# 	self._history = History(self._history_stack, self.msisdn)
 		return self._history
 
 	@property
@@ -61,7 +52,7 @@ class UssdSession(object):
 		return self.accessed_at is None
 
 	def _get_session_id(self):
-		return self.key.sid
+		return self.key.session_id
 
 	id = property(_get_session_id)
 	sid = property(_get_session_id)
@@ -69,7 +60,7 @@ class UssdSession(object):
 	del _get_session_id
 
 	def _get_msisdn(self):
-		return self.key.uid
+		return self.key.phone_number
 
 	uid = property(_get_msisdn)
 	msisdn = property(_get_msisdn)
@@ -108,7 +99,7 @@ class UssdSession(object):
 		return state
 
 	def __eq__(self, other):
-		return isinstance(other, UssdSession) and self.key == other.key
+		return isinstance(other, Session) and self.key == other.key
 
 	def __ne__(self, other):
 		return not self.__eq__(other)
@@ -118,61 +109,123 @@ class UssdSession(object):
 
 
 
+@export
+class SessionManager(AppBoundInstanceABC, SessionManagerABC):
 
-class HistoryPath(str):
-	"""A string-like object that has a head property
-	"""
-	__slots__ = ()
+	def __init__(self, app=None, backend=None, lifetime=60, timeout=None, name='ussd_session',
+				session_class=Session, session_key_class=SessionKey):
+		self.app = None
+		self._session_timeout = None
+		self.session_name = name
+		self.session_lifetime = lifetime
+		self.session_timeout = timeout
 
-	@property
-	def head(self):
-		return self[-config.SCREEN_UID_LEN:]
+		self.set_backend(backend)
+		self.session_class = import_if_string(session_class)
+		self.session_key_class = import_if_string(session_key_class)
 
-
-
-class History(object):
-
-	__slots__ = ('stack', 'key')
-
-	def __init__(self, stack, key):
-		self.stack = stack or []
-		self.key = key
+		if app is not None:
+			self.init_app(app)
 
 	@property
-	def top(self):
-		return
+	def session_timeout(self):
+		return self.session_lifetime if self._session_timeout is None else self._session_timeout
 
-	def cache_key(self, path):
-		return '%s:%s' % (self.key, path)
+	@session_timeout.setter
+	def session_timeout(self, value):
+		self._session_timeout = value
 
-	def cache_timeout(self):
-		return config.HISTORY_STATE_X * config.SESSION_TIMEOUT
+	@property
+	def backend(self):
+		if self._backend is not None:
+			return self._backend
+		elif self.app is not None:
+			return self.app.cache
+		else:
+			raise AttributeError(
+				'Required attribute backend not configured for session manager %s.'\
+				% (self.__class__.__name__,)
+			)
 
-	def pop(self, k=None):
-		k = k or 1
-		if self.stack and isinstance(k, int):
-			k = -k
-			self.stack[k:] = []
-			path = self.stack and self.stack[-1] or None
-			if path:
-				ref = cache.get(self.cache_key(path))
-				if ref is not None:
-					return ScreenRef(path.head, *ref)
+	def set_backend(self, backend):
+		if backend is not None:
+			backend = import_if_string(backend)
+			if callable(backend):
+				backend = backend()
+		self._backend = backend
 
-	def push(self, screen_ref):
-		uid = get_screen_uid(screen_ref.screen)
-		if not self.stack or self.stack[-1].head != uid:
-			path = HistoryPath('%s/%s' % (self.stack and self.stack[-1] or '', uid))
-			self.stack.append(path)
-			cache.set(self.cache_key(path), screen_ref[1:], self.cache_timeout())
+	backend.setter(set_backend)
+
+	@cached_property
+	def stale_sessions(self):
+		return self.session_timeout != self.session_lifetime
+
+	def init_app(self, app):
+		if self.app and app is not self.app:
+			raise RuntimeError(
+				'Error binding app %s to %s. Already bound to app %s'\
+				% (app.name, self.__class__.__name__, self.app.name)
+			)
+
+		config = app.config.namespace('session_')
+
+		self.app = app
+		self.session_name = config.get('name', self.session_name)
+		self.session_lifetime = config.get('lifetime', self.session_lifetime)
+		self.session_timeout = config.get('timeout', self.session_timeout)
+
+		self.session_class = import_if_string(config.get('class', self.session_class))
+		self.session_key_class = import_if_string(config.get('key_class', self.session_key_class))
+
+		if 'backend' in config:
+			self.set_backend(config['backend'])
+
+		self.backend
+
+	def open(self, app, request):
+		key = self.get_session_key(request)
+		session = self.get_saved_session(key)
+		if session and self.stale_sessions:
+			session.is_stale = datetime.datetime.now() - self.session_lifetime > session.last_activity
+
+		if not session:
+			session = self.create_session(key)
+
+		return session
+
+	def close(self, app, session, response):
+		self.saved_session(session)
+
+	def create_session(self, key: SessionKey):
+		return self.session_class(key)
+
+	def get_session_key(self, request: UssdRequest):
+		return self.session_key_class(request.phone_number, request.session_id)
+
+	def get_backend_key(self, key: SessionKey):
+		return '%s:%s' % (self.session_name, key.phone_number)
+
+	def get_saved_session(self, key: SessionKey):
+		return self.backend.get(self.get_backend_key(key))
+
+	def saved_session(self, session):
+		self.backend.set(self.get_backend_key(session.key), session, self.session_timeout)
 
 
 
-class SessionContext(ChainMap):
+class SessionMiddleware(object):
 
-	def __init__(self, *maps):
-		super(State, self).__init__(*maps)
-		self.maps[0].setdefault('screen', None)
-		self.maps[0].setdefault('argv', None)
-		self.maps[0].setdefault('arg', None)
+	__slots__ = ('handle_request',)
 
+	def __init__(self, handle_request):
+		self.handle_request = handle_request
+
+	def __call__(self, app, request):
+		session = app.session_manager.open(app, request)
+		request.session = session = signals.open_session.pipe(app, session, request=request)
+
+		response = self.handle_request(app, request)
+
+		session = signals.save_session.pipe(app, session, response=response)
+		app.session_manager.close(app, session, response)
+		return response

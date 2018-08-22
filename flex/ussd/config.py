@@ -9,155 +9,143 @@ USSD = {
 This module provides the `ussd_setting` object, that is used to access USSD
 settings, checking for user settings first, then falling back to the defaults.
 """
+from collections import MutableMapping
 
-from abc import ABCMeta, abstractmethod
-
-from flex.utils.local import Proxy
 from flex.utils.decorators import export
-from flex.utils.module_loading import import_strings
 from flex.datastructures.collections import AttrChainMap
-
-
-__all__ = [
-	'DEFAULT_CONFIG'
-]
-
-DEFAULT_CONFIG = dict(
-	SESSION_BACKEND = 'ussd.backends.CacheBackend',
-	SESSION_CLASS = 'ussd.sessions.UssdSession',
-	SESSION_KEY_CLASS = 'ussd.sessions.UssdSessionKey',
-	SESSION_KEY_PREFIX = 'ussd_session',
-	SESSION_TIMEOUT = 120,
-	URLS = (),
-	DEFAULT_HTTP_METHODS = 'GET',
-	INITIAL_SCREEN = None,
-	SCREEN_STATE_TIMEOUT = 120,
-	MAX_PAGE_LENGTH=182,
-	SCREEN_UID_LEN=2,
-	HISTORY_STATE_X = 16,
-
-	DYNAMIC_SCREENS_BACKEND = None,
-	NAMESPACE_LOADER = None,
-)
-
-
-# List of settings that may be in string import notation.
-IMPORT_STRINGS = (
-	'SESSION_BACKEND',
-	'SESSION_CLASS',
-	'SESSION_KEY_CLASS',
-	'NAMESPACE_LOADER',
-	'DYNAMIC_SCREENS_BACKEND',
-)
-
-
-VALUE_PARSERS = dict(
-	URLS=lambda v: _normalize_urls(v),
-	DEFAULT_HTTP_METHODS=lambda v: _ensure_list(v, str_split=True)
-)
-
-
-VALUE_CHECKS = dict(
-	INITIAL_SCREEN=lambda v: v is not None,
-)
+from flex.utils.local import Proxy
 
 
 @export
-class ConfigProvider(metaclass=ABCMeta):
-	__slots__ = ()
+class ConfigAttribute(object):
+	"""Makes an attribute forward to the config"""
 
-	@abstractmethod
-	def get_config(self):
-		pass
+	config_attr = 'config'
+
+	def __init__(self, name, get_converter=None, config_attr=None):
+		self.__name__ = name
+		self.get_converter = get_converter
+		self.config_attr = config_attr or self.config_attr
+
+	def __get__(self, obj, type=None):
+		if obj is None:
+			return self
+		rv = getattr(obj, self.config_attr)[self.__name__]
+		if self.get_converter is not None:
+			rv = self.get_converter(rv)
+		return rv
+
+	def __set__(self, obj, value):
+		getattr(obj, self.config_attr)[self.__name__] = value
 
 
 @export
 class Config(AttrChainMap):
-	"""The ussd config object.
-	"""
-	__slots__ = ('_provider',)
+	"""Ussd global and application config."""
 
-	_default_config = DEFAULT_CONFIG
-	_import_strings = IMPORT_STRINGS
-	_value_parsers = VALUE_PARSERS
-	_value_checks = VALUE_CHECKS
+	__slots__ = ()
 
-	def __init__(self):
-		object.__setattr__(self, '_provider', None)
-
-	def __del__(self):
-		pass
-
-	def _get_current_object(self):
-		"""Return the current config object from the provider.
+	def setdefaults(self, *mapping, **kwargs):
+		"""Updates the config like :meth:`update` ignoring existing items.
 		"""
-		if self._provider is None:
-			raise RuntimeError('USSD config provider not set.')
-		return self._provider.get_config()
-
-	def set_provider(self, provider: ConfigProvider):
-		object.__setattr__(self, '_provider', provider)
-
-	def init_config(self, config):
-		for k, v in self._default_config.items():
-			config.setdefault(k, v)
-
-		for k, fn in self._value_parsers.items():
-			config[k] = fn(config[k])
-
-		for k, fn in self._value_checks.items():
-			if not fn(config[k]):
-				raise ValueError('Invalid USSD config. Key: %s.' % k)
-
-		for k in self._import_strings:
-			config[k] = import_strings(config[k])
-
-		return config
-
-
-config = Config()
-
-
-def _ensure_list(val, str_split=None):
-	if str_split is not None and isinstance(val, str):
-		if str_split == True:
-			return val.split()
-		else:
-			return val.split(str_split)
-
-	if not isinstance(val, (tuple, list)):
-		return [val]
-	else:
-		return list(val)
-
-
-
-def _normalize_urls(urls):
-	if not isinstance(urls, (tuple, list)):
-		raise ValueError(
-			'USSD.URLS setting value must be a list or tuple. %s given.'\
-			% type(urls))
-
-	defaults = dict(path=None, methods=config.DEFAULT_HTTP_METHODS)
-	rv = []
-
-	for url in urls:
-		if isinstance(url, str):
-			url = dict(path=url)
-
-		if not isinstance(url, dict):
-			raise ValueError('Items of USSD.URLS setting must be str or dict. %s given.' % type(url))
-
-		for k,v in defaults.items():
-			url.setdefault(k, v)
-
-		if not url['path'] or not isinstance(url['path'], str):
-			raise ValueError(
-				'USSD.URLS[][\'path\'] setting must be str (regex pattern). %s given.'\
-				% type(url['path'])
+		mappings = []
+		if len(mapping) == 1:
+			if hasattr(mapping[0], 'items'):
+				mappings.append(mapping[0].items())
+			else:
+				mappings.append(mapping[0])
+		elif len(mapping) > 1:
+			raise TypeError(
+				'expected at most 1 positional argument, got %d' % len(mapping)
 			)
+		mappings.append(kwargs.items())
+		for mapping in mappings:
+			for key, value in mapping:
+				self.setdefault(key, value)
 
-		url['methods'] = _ensure_list(url['methods'], str_split=True)
+	def namespace(self, namespace, trim_namespace=True):
+		"""Returns a Config object containing a subset of configuration options
+		that match the specified namespace/prefix.
+		"""
+		return Config(self.get_namespace_view(namespace, trim_namespace))
 
-		rv.append(url)
-	return rv
+	def get_namespace(self, namespace, trim_namespace=True):
+		"""Returns a dictionary containing a subset of configuration options
+		that match the specified namespace/prefix.
+		"""
+		return self.get_namespace_view(namespace, trim_namespace).copy()
+
+	def get_namespace_view(self, namespace, trim_namespace=True):
+		"""Returns a ConfigView of config options that match the specified
+		namespace/prefix.
+		"""
+		return ConfigNamespaceView(self, _namespace_key_func(namespace, trim_namespace=trim_namespace))
+
+
+
+def _namespace_key_func(namespace, trim_namespace=True):
+	def make_key(key, reverse=False):
+		if reverse:
+			if trim_namespace:
+				key = namespace + key
+			return key
+
+		if key.startswith(namespace):
+			if trim_namespace:
+				key = key[len(namespace):]
+			return key
+
+	return make_key
+
+
+
+@export
+class ConfigNamespaceView(MutableMapping):
+
+	__slots__ = ('base', 'make_key',)
+
+	def __init__(self, base, key_func):
+		self.base = base
+		self.make_key = key_func
+
+	def __len__(self):
+		return sum((1 for k in self))
+
+	def __iter__(self):
+		for key in self.base:
+			yv = self.make_key(key)
+			if yv is not None:
+				yield yv
+
+	def __bool__(self):
+		return any(self)
+
+	def __getitem__(self, key):
+		return self.base[self.make_key(key, True)]
+
+	def __setitem__(self, key, value):
+		self.base[self.make_key(key, True)] = value
+
+	def __delitem__(self, key):
+		del self.base[self.make_key(key, True)]
+
+	def __copy__(self):
+		return dict(self.items())
+
+	def copy(self):
+		return self.__copy__()
+
+
+@export
+class UssdConfig(Config):
+	__slots__ = ()
+
+	def __init__(self, default_config=None):
+		super(UssdConfig, self).__init__({}, Proxy(lambda: {}), default_config or {})
+
+	def set_provider(self, provider):
+		self.maps[-2:-1] = [Proxy(provider)]
+
+
+
+ussd_config = UssdConfig()

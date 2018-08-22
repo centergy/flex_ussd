@@ -1,16 +1,14 @@
 import re
-import inspect
 from threading import RLock
-from warnings import warn
+from flex.utils import text
+from flex.utils.decorators import cached_class_property, export
 
 from .. import exc
-from .. datastructures import Void
-from ..utils.text import to_snakecase, to_startcase
-from ..utils.decorators import cached_class_property, cached_property, export
 from ..namespaces import module_ussd_namespace
-from ..config import config
 
-from collections import namedtuple
+
+NOTHING = object()
+
 
 @export
 class screen_meta_option(object):
@@ -85,9 +83,9 @@ class screen_meta_option(object):
 	def setvalue(self, obj, value):
 		obj.__dict__[self.name] = value
 
-	def getvalue(self, obj, default=Void):
+	def getvalue(self, obj, default=NOTHING):
 		rv = obj.__dict__.get(self.name, default)
-		if rv is Void:
+		if rv is NOTHING:
 			raise AttributeError(self.name)
 		return rv
 
@@ -138,7 +136,7 @@ class BaseScreenMetaOptions(object):
 	def _prepare(self):
 		assert hasattr(self, '_meta'), 'Screen meta options already prepared.'
 
-		for k,opt in self._opts.items():
+		for k, opt in self._opts.items():
 			opt.load(self, self._meta)
 
 		del self._meta
@@ -152,7 +150,7 @@ class ScreenMetaOptions(BaseScreenMetaOptions):
 	is_abstract = screen_meta_option('abstract', default=False, inherit=False)
 
 	@property
-	def name(self):
+	def object_name(self):
 		return self.screen.__name__
 
 	@property
@@ -161,7 +159,7 @@ class ScreenMetaOptions(BaseScreenMetaOptions):
 
 	@property
 	def import_name(self):
-		return '%s.%s' % (self.module, self.name)
+		return '%s.%s' % (self.module, self.object_name)
 
 	@screen_meta_option(inherit=False)
 	def label(self, value):
@@ -172,13 +170,12 @@ class ScreenMetaOptions(BaseScreenMetaOptions):
 		return value or self.screen.__doc__
 
 	@screen_meta_option(inherit=False)
-	def slug(self, value):
-		value = value or self._make_screen_slug()
+	def name(self, value):
+		value = value or self._make_screen_name()
 
 		if not re.search(r'^\.?[a-zA-Z0-9_][-a-zA-Z0-9_.]+\Z', value):
-			raise exc.ScreenIdError(
-				'Invalid UssdScreen id <%s(id="%s")>.'\
-				% (self.import_name, name)
+			raise exc.ScreenNameError(
+				'Invalid UssdScreen name <%s(name="%s")>.' % (self.import_name, value)
 			)
 
 		if value[0] == '.':
@@ -186,17 +183,17 @@ class ScreenMetaOptions(BaseScreenMetaOptions):
 			if namespace:
 				value = namespace + value
 			else:
-				raise exc.ScreenIdError(
-					'Screen <%s(id="%s")> has a relative id but it isn\'t in a '
-					'registered namespace.' % (self.import_name, name)
+				raise exc.ScreenNameError(
+					'Screen <%s(name="%s")> has a relative name but it isn\'t in a '
+					'registered namespace.' % (self.import_name, value)
 				)
 		return value
 
 	def _get_namespace(self):
-		return (config.NAMESPACE_LOADER or module_ussd_namespace)(self.module)
+		return module_ussd_namespace(self.module)
 
-	def _make_screen_slug(self):
-		return  '.%s' % to_snakecase(self.name)
+	def _make_screen_name(self):
+		return  '.%s' % text.snake(self.object_name)
 
 	def _make_screen_label(self):
-		return to_startcase(self.name)
+		return text.startcase(self.name.rpartition('.'))

@@ -1,70 +1,31 @@
-import os
 import re
-import string
-import random
-import pickle
-import warnings
-from django.apps import apps
-from collections import namedtuple
-from django.conf import settings
-from django.core.cache import cache
-from collections import OrderedDict
+from collections import namedtuple, OrderedDict
 from logging import getLogger
 
-from ..datastructures import ClassReigistry, AttributeBag, choice, symbol
-from ..utils.decorators import cached_property, class_property
-from ..config import config
+from flex.datastructures.collections import AttrBag
 
-from .options import screen_meta_option, ScreenMetaOptions
+
+from .options import ScreenMetaOptions
+from .registry import registry
 
 logger = getLogger('ussd')
 
-
-NOTHING = symbol('NOTHING')
-
-_REGISTRY = ClassReigistry()
-
-_UID_LEN = config.SCREEN_UID_LEN
-
-
-_UID_LOCK = set()
-_UID_LOCK_FILE = os.path.join(settings.LOCAL_DATA_DIR, '.ussd-screens-uid.lock')
-if os.path.exists(_UID_LOCK_FILE):
-	with open(_UID_LOCK_FILE, 'r') as fo:
-		_UID_LOCK = set((k.strip() for k in fo.read().split('\n') if k.strip()))
-
-
-def _save_uid_lock():
-	with open(_UID_LOCK_FILE, 'w+') as fo:
-		fo.write('\n'.join(_UID_LOCK))
-
-
-_UID_MAP =  ClassReigistry()
-_UID_MAP_FILE = os.path.join(settings.LOCAL_DATA_DIR, '.ussd-screens-uid.map')
-if os.path.exists(_UID_MAP_FILE):
-	with open(_UID_MAP_FILE, 'rb') as mp:
-		_UID_MAP = pickle.load(mp)
-
-
-def _save_uid_map():
-	with open(_UID_MAP_FILE, 'wb+') as fo:
-		pickle.dump(_UID_MAP, fo)
-
-
-def _generate_screen_uid():
-	rv = None
-	while rv is None or rv in _UID_LOCK or rv in _REGISTRY:
-		rv = ''.join(random.choice(string.digits + string.ascii_lowercase)\
-				for _ in range(2))
-	_UID_LOCK.add(rv)
-	_save_uid_lock()
-	return rv
-
-
+NOTHING = object()
 
 CON = 'CON'
 
 END = 'END'
+
+
+
+class choice(namedtuple('_choice', 'value label')):
+	__slots__ = ()
+
+	def as_str(self, template='%s: %s'):
+		return template % self
+
+	def __str__(self):
+		return self.as_str()
 
 
 class ScreenRef(namedtuple('_ScreenRef', 'screen args kwargs')):
@@ -72,17 +33,14 @@ class ScreenRef(namedtuple('_ScreenRef', 'screen args kwargs')):
 
 
 def render_screen(screen, *args, **kwargs):
-	# if isinstance(screen, str):
-	# 	screen = get_screen(screen)
 	return ScreenRef(screen, args, kwargs)
 
 
 def get_screen(screen, default=NOTHING):
 	if isinstance(screen, UssdScreenType):
 		return screen
-
 	try:
-		return _REGISTRY[screen]
+		return registry[screen]
 	except KeyError:
 		if default is NOTHING:
 			raise LookupError('UssdScreen "%s" not found' % screen)
@@ -90,20 +48,9 @@ def get_screen(screen, default=NOTHING):
 			return default
 
 
-def get_screen_uid(screen, default=NOTHING):
-	scls = get_screen(screen)
-	rv = scls.__uid__
-	assert rv in _UID_LOCK, ('Screen UID "%s" not registered' % (rv,))
-	return rv
 
 
-def get_home_screen():
-	return config.INITIAL_SCREEN
-
-
-
-
-class ScreenState(AttributeBag):
+class ScreenState(AttrBag):
 
 	def __init__(self, screen, *bases, **data):
 		super(ScreenState, self).__init__(*bases, **data)
@@ -128,16 +75,9 @@ class UssdScreenType(type):
 		cls._set_meta_options()
 
 		if not cls._meta.is_abstract:
-			if cls._meta.slug in _REGISTRY:
+			if cls._meta.name in registry:
 				raise RuntimeError('UssdScreen name conflict. %s' % cls._meta.name)
-			_REGISTRY[cls._meta.slug] = cls
-			uid = _UID_MAP.get(cls._meta.slug)
-			if not uid:
-				uid = _generate_screen_uid()
-				_UID_MAP[cls._meta.slug] = uid
-				_save_uid_map()
-			cls.__uid__ = uid
-			_REGISTRY[uid] = cls
+			registry[cls._meta.name] = cls
 
 		return cls
 
@@ -155,20 +95,9 @@ class UssdScreenType(type):
 		return rv
 
 	def _set_meta_options(cls):
-		meta = getattr(cls, 'Meta', None)
-		base = getattr(cls, '_meta', None)
-		cls._meta = cls._meta_options_cls(cls, meta, base)
+		cls._meta = cls._meta_options_cls(cls, getattr(cls, 'Meta', None), getattr(cls, '_meta', None))
 		cls._meta._prepare()
 
-
-
-
-
-# class UssdPageNav(object):
-# 	"""docstring for UssdPageNav"""
-# 	def __init__(self, arg):
-# 		super(UssdPageNav, self).__init__()
-# 		self.arg = arg
 
 
 
@@ -267,19 +196,6 @@ class UssdScreen(object, metaclass=UssdScreenType):
 		self.state = state
 		self.payload = self.create_payload()
 
-	@class_property
-	def name(cls):
-		logger.warning('Property UssdScreen.name has been deprecated. '
-			'Use %s._meta.name to get the name for %s.%s',
-				cls.__name__, cls.__module__, cls.__name__
-			)
-		warnings.warn('Property UssdScreen.name has been deprecated. '
-			'Use %s._meta.name to get the name for %s.%s' %
-				(cls.__name__, cls.__module__, cls.__name__),
-				stacklevel=3
-			)
-		return cls._meta.name
-
 	@property
 	def print(self):
 		return self.payload.append
@@ -313,7 +229,7 @@ class UssdScreen(object, metaclass=UssdScreenType):
 
 	def cancel_restoration(self, *args):
 		self.session.reset()
-		return render_screen(get_home_screen())
+		return render_screen(self.app.initial_screen)
 
 	def dispatch(self, *args, restore=False):
 		if not self.check_lenargs(args):
@@ -326,7 +242,7 @@ class UssdScreen(object, metaclass=UssdScreenType):
 				act = self.nav_menu[args[0]][1]
 				if act is not None:
 					act = self.session.history.pop(act)
-				return render_screen(get_home_screen()) if act is None else act
+				return render_screen(self.app.initial_screen) if act is None else act
 
 		pg_menu = self.PAGINATION_MENU
 
