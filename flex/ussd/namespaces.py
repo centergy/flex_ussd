@@ -1,8 +1,12 @@
-from .exc import UssdNamespaceError
+import re
+
 from flex.utils.decorators import export
+from .exc import UssdNamespaceError
 
 
 _module_namespace_registry = dict()
+
+# _namespaces = dict()
 
 
 @export
@@ -37,17 +41,16 @@ def ussd_namespace(module_name, name=None):
 
 	if name[0] == '.':
 		try:
-			name = module_ussd_namespace(module_name.rsplit('.', 1)[0]) + name
+			name = '%s%s' % (module_ussd_namespace(module_name.rsplit('.', 1)[0]), name)
 		except UssdNamespaceError as e:
-			raise UssdNamespaceError(
+			raise ValueError(
 				'Relatively named ussd namespace %s in %s has no registered '\
 				'ancestor.' % (name, module_name)
 			) from e
 
-	if name[-1] == '.':
+	if not isvalid_namespace_name(name):
 		raise ValueError(
-			'Error registering namespace "%s". USSD namespaces '\
-			'cannot end with a \'.\' (dot).' % (name,)
+			'Error registering namespace "%s". Invalid name.' % (name,)
 		)
 	elif module_name in _module_namespace_registry:
 		if _module_namespace_registry[module_name] != name:
@@ -81,3 +84,11 @@ def module_ussd_namespace(module_name, silent=False):
 		raise UssdNamespaceError(
 			'%s is not in a registered namespace' % module_name
 		)
+
+
+
+def isvalid_namespace_name(value, *, split=True):
+	if isinstance(value, str) and value:
+		regex = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*\Z')
+		return all(map(regex.search, value.split('.'))) if split else bool(regex.search(value))
+	return False

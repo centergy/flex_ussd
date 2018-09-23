@@ -5,8 +5,9 @@ class ImproperlyConfigured(Exception):
 
 
 
-class ScreenNameError(ValueError):
+class ScreenMetadataError(ValueError):
 	pass
+
 
 class UssdNamespaceError(RuntimeError):
 	pass
