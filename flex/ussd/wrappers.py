@@ -1,18 +1,8 @@
-import re
-from enum import Enum
 from collections import UserList
 
 from flex.utils.decorators import export
 
 from .abc import UssdDataSequence
-
-
-NOTHING = object()
-
-@export
-class UssdStatus(Enum):
-	CON = 'CON'
-	END = 'END'
 
 
 
@@ -197,11 +187,3 @@ class UssdRequest(object):
 
 
 
-
-
-@export
-class UssdResponse(object):
-
-	def __init__(self, payload, status=UssdStatus.CON):
-		self.payload = payload
-		self.status = status
