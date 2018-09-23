@@ -1,4 +1,4 @@
-from collections import Mapping, OrderedDict
+from collections import OrderedDict
 
 from flex.utils.decorators import cached_property
 from flex.utils.module_loading import import_if_string, import_strings
@@ -43,7 +43,7 @@ class UssdApp(object):
 	def middleware(self):
 		rv = list(self.config.get('global_middleware', []))
 		rv.extend(self.config.get('middleware', []))
-		rv = signals.middleware_list.pipe(self, rv)
+		# rv = signals.middleware_list.pipe(self, rv)
 		return import_strings(rv)
 
 	def make_config(self, config=None):
@@ -75,9 +75,6 @@ class UssdApp(object):
 			raise ImproperlyConfigured('Request handler must be a type or callable. In app %s.' % self.name)
 
 		return factory(self)
-
-	def __call__(self, request):
-		return self.handler(request)
 
 
 
@@ -111,9 +108,6 @@ class UssdAppRouter(object):
 
 	def __len__(self):
 		return self.routes.__len__()
-
-	def __contains__(self, code):
-		return self.routes.__contains__(code)
 
 	def __contains__(self, code):
 		return self.routes.__contains__(code)

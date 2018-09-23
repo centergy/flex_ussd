@@ -182,7 +182,7 @@ class SessionManager(AppBoundInstanceABC, SessionManagerABC):
 
 		self.backend
 
-	def open(self, app, request):
+	def open(self, request):
 		key = self.get_session_key(request)
 		session = self.get_saved_session(key)
 		if session and self.stale_sessions:
@@ -193,7 +193,7 @@ class SessionManager(AppBoundInstanceABC, SessionManagerABC):
 
 		return session
 
-	def close(self, app, session, response):
+	def close(self, session, response):
 		self.saved_session(session)
 
 	def create_session(self, key: SessionKey):
@@ -220,12 +220,12 @@ class SessionMiddleware(object):
 	def __init__(self, handle_request):
 		self.handle_request = handle_request
 
-	def __call__(self, app, request):
-		session = app.session_manager.open(app, request)
-		request.session = session = signals.open_session.pipe(app, session, request=request)
+	def __call__(self, request):
+		session = request.app.session_manager.open(request)
+		request.session = session #= signals.open_session.pipe(request.app, session, request=request)
 
-		response = self.handle_request(app, request)
+		response = self.handle_request(request)
 
-		session = signals.save_session.pipe(app, session, response=response)
-		app.session_manager.close(app, session, response)
+		session = request.session #signals.save_session.pipe(request.app, request.session, response=response)
+		request.app.session_manager.close(session, response)
 		return response

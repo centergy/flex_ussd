@@ -50,11 +50,11 @@ class SessionManagerABC(ABC):
 	__slots__ = ()
 
 	@abstractmethod
-	def open(self, app, request):
+	def open(self, request):
 		raise NotImplementedError('%s.open' % self.__class__.__name__)
 
 	@abstractmethod
-	def close(self, app, session, response):
+	def close(self, session, response):
 		raise NotImplementedError('%s.close' % self.__class__.__name__)
 
 
